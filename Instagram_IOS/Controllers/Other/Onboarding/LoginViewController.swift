@@ -240,7 +240,6 @@ class LoginViewController: UIViewController {
         present(UINavigationController(rootViewController: vc), animated: true)
     }
 }
-// TextField delegate behavior
 
 extension LoginViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
