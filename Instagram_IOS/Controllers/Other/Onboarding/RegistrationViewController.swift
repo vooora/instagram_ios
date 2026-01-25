@@ -114,13 +114,22 @@ class RegistrationViewController: UIViewController {
         AuthManager.shared.registerNewUser(username: username, email: email, password: password){ registered in
             DispatchQueue.main.async{
                 if registered {
-                    //good to go
+                    //good to go - navigate to HomeViewController
                     let homeVC = HomeViewController()
-                                let navVC = UINavigationController(rootViewController: homeVC)
-                                navVC.modalPresentationStyle = .fullScreen
+                    let navVC = UINavigationController(rootViewController: homeVC)
+                    navVC.modalPresentationStyle = .fullScreen
+                    
+                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = scene.windows.first {
+                        window.rootViewController = navVC
+                        window.makeKeyAndVisible()
+                    }
                 }
                 else{
-                    
+                    //registration failed
+                    let alert = UIAlertController(title: "Sign Up Error", message: "We were unable to create your account. Please try again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "Dismiss", style: .cancel, handler: nil))
+                    self.present(alert, animated: true)
                 }
             }
         }

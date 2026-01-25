@@ -15,13 +15,10 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
     private let tableView = UITableView()//property of the view controller
     private let headerView = UIView()
     private let headerTitle = UILabel()
+    private let offlineIndicator = UILabel()
     
-    private var data: [Item] = [
-        Item(name: "Apple", id: 1, imageURL: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRwtuz_CBrB2lHQS1j3lGlSliN-i5SI-Sh8eQ&s", username: "i_love_apples", isLiked: true),
-        Item(name: "Banana", id: 2, imageURL: "https://www.southernliving.com/thmb/EM-f8L_T36WluwBtBkhD4gnCKg8=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/How_To_Freeze_Bananas_023-71e81efacb6a4d87a3596b8c2c519884.jpg", username: "user2", isLiked: false),
-        Item(name: "Orange", id: 3, imageURL: "https://upload.wikimedia.org/wikipedia/commons/e/e3/Oranges_-_whole-halved-segment.jpg", username: "i_love_oranges", isLiked: false),
-        Item(name: "Mango", id: 4, imageURL: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRwtuz_CBrB2lHQS1j3lGlSliN-i5SI-Sh8eQ&s", username: "user4", isLiked: false)
-    ]
+    private var data: [Item] = []
+    private var isOffline = false
 
 
     
@@ -41,8 +38,108 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
         headerView.addSubview(headerTitle)
         headerTitle.text = "Instagram"
         headerTitle.font = .boldSystemFont(ofSize: 24)
+        
+        setupOfflineIndicator()
+        
+        // Load from Core Data first (offline support)
+        loadPostsFromCoreData()
+        
+        // Then try to fetch from API
+        fetchPosts()
 
-
+    }
+    
+    private func setupOfflineIndicator() {
+        offlineIndicator.text = "No network connection - Showing offline data"
+        offlineIndicator.textColor = .systemOrange
+        offlineIndicator.font = .systemFont(ofSize: 12)
+        offlineIndicator.textAlignment = .center
+        offlineIndicator.backgroundColor = .systemGray6
+        offlineIndicator.isHidden = true
+        view.addSubview(offlineIndicator)
+    }
+    
+    private func loadPostsFromCoreData() {
+        let feedPosts = CoreDataManager.shared.fetchFeedPosts()
+        if !feedPosts.isEmpty {
+            self.data = feedPosts.map { feedPost in
+                Item(
+                    name: "",
+                    id: feedPost.likeCount,
+                    imageURL: feedPost.postImage,
+                    username: feedPost.userName,
+                    isLiked: feedPost.likedByUser
+                )
+            }
+            DispatchQueue.main.async {
+                self.tableView.reloadData()
+                print("Loaded \(feedPosts.count) posts from Core Data")
+            }
+        }
+    }
+    
+    private func fetchPosts() {
+        NetworkManager.shared.fetchUserFeed { [weak self] result in
+            guard let self = self else { return }
+            
+            switch result {
+            case .success(let feedPosts):
+                // Convert FeedPost to Item
+                self.data = feedPosts.map { feedPost in
+                    Item(
+                        name: "", // No caption in API response, using empty string
+                        id: feedPost.likeCount,
+                        imageURL: feedPost.postImage,
+                        username: feedPost.userName,
+                        isLiked: feedPost.likedByUser
+                    )
+                }
+                DispatchQueue.main.async {
+                    self.isOffline = false
+                    self.offlineIndicator.isHidden = true
+                    self.tableView.reloadData()
+                }
+            case .failure(let error):
+                print("Error fetching posts: \(error.localizedDescription)")
+                print("Full error: \(error)")
+                
+                // Check if we have offline data
+                let hasOfflineData = !self.data.isEmpty
+                
+                DispatchQueue.main.async {
+                    // Show offline indicator if we have offline data
+                    if hasOfflineData {
+                        self.isOffline = true
+                        self.offlineIndicator.isHidden = false
+                    } else {
+                        // No offline data, show error alert
+                        let errorMessage: String
+                        if let urlError = error as? URLError {
+                            switch urlError.code {
+                            case .notConnectedToInternet:
+                                errorMessage = "No internet connection. Please check your network settings."
+                            case .timedOut:
+                                errorMessage = "Request timed out. Please try again."
+                            case .cannotFindHost:
+                                errorMessage = "Cannot reach server. Please check your connection."
+                            default:
+                                errorMessage = "Network error: \(urlError.localizedDescription)"
+                            }
+                        } else {
+                            errorMessage = "Failed to load posts: \(error.localizedDescription)"
+                        }
+                        
+                        let alert = UIAlertController(
+                            title: "Error",
+                            message: errorMessage,
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            }
+        }
     }
     
     override func viewDidLayoutSubviews(){
@@ -57,6 +154,13 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
                 height: 40
             )
         headerView.frame = CGRect(x: 0, y: view.safeAreaInsets.top, width: view.frame.width, height: 60)
+        
+        offlineIndicator.frame = CGRect(
+            x: 0,
+            y: headerView.frame.maxY,
+            width: view.frame.width,
+            height: 30
+        )
     }
     
     
@@ -78,6 +182,7 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
         var item = data[indexPath.row]
         cell.caption.text = item.name
         cell.likeLabel.text = "\(item.id) likes"
+        print("Loading image for row \(indexPath.row): \(item.imageURL)")
         cell.configureImage(urlString: item.imageURL)
         cell.username.text = item.username
         
@@ -145,6 +250,7 @@ class SimpleTableViewCell: UITableViewCell { //visual representation of a single
         username.textColor = .label
         urlImage.contentMode = .scaleAspectFill
         urlImage.clipsToBounds = true
+        urlImage.backgroundColor = .systemGray6 // Temporary: to see if image view is visible
 //        likeButton.addTarget(self,
 //                             action: #selector(didTapLike),
 //                             for: .touchUpInside)
@@ -173,8 +279,8 @@ class SimpleTableViewCell: UITableViewCell { //visual representation of a single
         super.layoutSubviews()
         
         
-        username.frame = CGRect(x: 16, y: 8, width: contentView.frame.width, height: 16)
-        urlImage.frame = CGRect(x:16, y:username.bottom, width: contentView.frame.width, height: 200)
+        username.frame = CGRect(x: 16, y: 8, width: contentView.frame.width - 32, height: 16)
+        urlImage.frame = CGRect(x: 0, y: username.bottom + 8, width: contentView.frame.width, height: 200)
         likeButton.frame = CGRect(x:16, y:urlImage.bottom + 10, width: 20, height: 20)
         likeLabel.frame = CGRect(x:likeButton.right + 8, y:urlImage.bottom + 10, width: contentView.frame.width - 32, height: 22)
         caption.frame = CGRect(x:16, y:likeLabel.bottom, width: contentView.frame.width - 32, height: 22)
@@ -182,6 +288,7 @@ class SimpleTableViewCell: UITableViewCell { //visual representation of a single
     
     func configureImage(urlString: String) {
         guard let url = URL(string: urlString) else {
+            print("Invalid image URL: \(urlString)")
             urlImage.image = nil
             return
         }
@@ -190,11 +297,27 @@ class SimpleTableViewCell: UITableViewCell { //visual representation of a single
         urlImage.image = nil
 
         // Fetch image asynchronously
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            if let data = data, let image = UIImage(data: data) {
-                DispatchQueue.main.async {
-                    self.urlImage.image = image
-                }
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("Error loading image from \(urlString): \(error.localizedDescription)")
+                return
+            }
+            
+            guard let data = data else {
+                print("No data received for image: \(urlString)")
+                return
+            }
+            
+            guard let image = UIImage(data: data) else {
+                print("Failed to create image from data for URL: \(urlString)")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self.urlImage.image = image
+                print("Successfully loaded image from: \(urlString)")
             }
         }.resume()
     }

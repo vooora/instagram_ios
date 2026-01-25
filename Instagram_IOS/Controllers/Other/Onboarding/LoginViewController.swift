@@ -208,8 +208,16 @@ class LoginViewController: UIViewController {
         AuthManager.shared.loginUser(username: username, email: email, password: password){ success in
             DispatchQueue.main.async{ //choosing main thread
                 if success{
-                    //user logged in
-                    self.dismiss(animated: true, completion: nil)
+                    //user logged in - navigate to HomeViewController
+                    let homeVC = HomeViewController()
+                    let navVC = UINavigationController(rootViewController: homeVC)
+                    navVC.modalPresentationStyle = .fullScreen
+                    
+                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = scene.windows.first {
+                        window.rootViewController = navVC
+                        window.makeKeyAndVisible()
+                    }
                 }
                 else{
                     //error occured

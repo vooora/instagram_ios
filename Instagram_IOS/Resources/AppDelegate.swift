@@ -16,6 +16,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         
         FirebaseApp.configure()
         
+        // Initialize Core Data
+        _ = CoreDataManager.shared.persistentContainer
+        
         return true
     }
 
